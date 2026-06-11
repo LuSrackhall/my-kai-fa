@@ -4,8 +4,8 @@
 |------|-----|
 | 日期 | 2026-06-11 |
 | 状态 | 已确认 |
-| 版本 | 1.0 |
-| 基础镜像 | `mcr.microsoft.com/devcontainers/universal:latest` |
+| 版本 | 2.0 |
+| 基础镜像 | `mcr.microsoft.com/devcontainers/base:ubuntu` (multi-arch) |
 
 ---
 

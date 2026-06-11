@@ -81,11 +81,25 @@
     //   共享镜像缓存,性能优于 Docker-in-Docker,无需特权模式。
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
 
-    // Node.js: 使用 LTS 版本,附带 pnpm 包管理器
-    //   覆盖 universal 镜像自带的 Node.js 版本以确保为最新 LTS。
+    // Node.js: LTS 版本 + pnpm 包管理器
     "ghcr.io/devcontainers/features/node:1": {
       "version": "lts",
       "pnpm": true
+    },
+
+    // Python: 最新版本
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "latest"
+    },
+
+    // Go: 最新版本
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "latest"
+    },
+
+    // Rust: 最新版本
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "latest"
     },
 
     // Git: 自动从宿主机继承 user.name / user.email 配置

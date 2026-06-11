@@ -3,17 +3,32 @@
 # start.sh — 按名启动开发容器
 #
 # 用法:
-#   ./scripts/start.sh <容器名> <宿主机路径>           首次启动,或进入已有容器
-#   ./scripts/start.sh <容器名> <宿主机路径> -f       强制删除旧容器并新建
+#   ./scripts/start.sh <容器名> <宿主机路径>                            首次启动,或进入已有容器
+#   ./scripts/start.sh <容器名> <宿主机路径> -f                         强制删除旧容器并新建
+#   ./scripts/start.sh <容器名> <宿主机路径> -f --platform linux/amd64  强制重建 + 指定架构
+#   ./scripts/start.sh <容器名> <宿主机路径> --platform linux/arm64      指定架构
 #
 # 示例:
 #   ./scripts/start.sh my-project ~/kai-fa/projects/foo
 #   ./scripts/start.sh my-project ~/kai-fa/projects/foo -f
-#   ./scripts/start.sh playground ~/Desktop/experiment
+#   ./scripts/start.sh playground ~/Desktop/experiment --platform linux/amd64
+#
+# 架构说明 (--platform):
+#   默认: Docker 自动选择与宿主机匹配的原生架构。
+#     Apple Silicon Mac  → linux/arm64 (原生性能)
+#     Intel Mac / Linux  → linux/amd64 (原生性能)
+#     Windows (WSL2)     → linux/amd64 (原生性能)
+#
+#   跨架构:
+#     --platform linux/amd64  在 ARM Mac 上通过 Rosetta 2 运行 amd64 容器
+#     --platform linux/arm64  在 Intel 机器上运行 arm64 容器 (通常不需要)
+#
+#   --platform 会透传给 build.sh,仅在需要构建镜像时生效。
+#   已有容器不受 --platform 影响,需配合 -f 先删后建。
 #
 # 行为:
 #   ┌─ 检查镜像 safe-agent-dev:latest 是否存在
-#   │   └─ 不存在 → 自动调用 scripts/build.sh 构建
+#   │   └─ 不存在 → 自动调用 scripts/build.sh [--platform ...] 构建
 #   │
 #   ├─ 检查容器 <容器名> 是否已存在 (docker ps -a --filter name=...)
 #   │   │
@@ -76,12 +91,15 @@ error()   { echo -e "${COLOR_RED}[ERROR]${COLOR_RESET} $*" >&2; }
 
 print_usage() {
     echo "用法:"
-    echo "  $0 <容器名> <宿主机路径>           启动/进入容器"
-    echo "  $0 <容器名> <宿主机路径> -f        强制重建容器"
+    echo "  $0 <容器名> <宿主机路径>                            启动/进入容器"
+    echo "  $0 <容器名> <宿主机路径> -f                         强制重建容器"
+    echo "  $0 <容器名> <宿主机路径> --platform linux/amd64      指定架构"
+    echo "  $0 <容器名> <宿主机路径> -f --platform linux/amd64   强制重建 + 指定架构"
     echo ""
     echo "示例:"
     echo "  $0 my-project ~/kai-fa/projects/foo"
     echo "  $0 my-project ~/kai-fa/projects/foo -f"
+    echo "  $0 my-project ~/kai-fa/projects/foo -f --platform linux/amd64"
 }
 
 # ============================================================
@@ -95,10 +113,31 @@ fi
 CONTAINER_NAME="$1"
 HOST_PATH="$2"
 FORCE_RECREATE=false
+PLATFORM_ARG=""
 
-if [ $# -ge 3 ] && [ "$3" = "-f" ]; then
-    FORCE_RECREATE=true
-fi
+shift 2
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -f)
+            FORCE_RECREATE=true
+            shift
+            ;;
+        --platform)
+            if [[ -z "${2:-}" ]]; then
+                error "--platform 需要参数 (如 linux/amd64 或 linux/arm64)"
+                exit 1
+            fi
+            PLATFORM_ARG="--platform $2"
+            shift 2
+            ;;
+        *)
+            error "未知参数: $1"
+            print_usage
+            exit 1
+            ;;
+    esac
+done
 
 # 解析宿主机路径为绝对路径
 HOST_PATH="$(cd "$HOST_PATH" 2>/dev/null && pwd || true)"
@@ -118,7 +157,8 @@ CONTAINER_TARGET="/workspaces/${MOUNT_BASENAME}"
 if ! docker image inspect "${FULL_IMAGE}" > /dev/null 2>&1; then
     warn "镜像 ${FULL_IMAGE} 不存在,正在自动构建..."
     SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-    "${SCRIPT_DIR}/build.sh"
+    # shellcheck disable=SC2086
+    "${SCRIPT_DIR}/build.sh" ${PLATFORM_ARG}
     success "镜像构建完成"
 fi
 
