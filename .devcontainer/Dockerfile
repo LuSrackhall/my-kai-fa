@@ -10,7 +10,7 @@
 #   - vscode 用户 (UID 1000)
 #   - Oh My Zsh + 常用插件
 # ============================================================
-FROM mcr.microsoft.com/devcontainers/universal:latest
+FROM --platform=linux/amd64 mcr.microsoft.com/devcontainers/universal:latest
 
 # ============================================================
 # 补充系统工具
