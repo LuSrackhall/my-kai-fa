@@ -1,0 +1,149 @@
+{
+  // ============================================================
+  // 容器名称 — 在 VS Code 左下角显示
+  // ============================================================
+  "name": "Safe Agent Dev",
+
+  // ============================================================
+  // 镜像构建 — 使用项目本地的 Dockerfile
+  // context: ".." 将构建上下文设为项目根目录
+  // ============================================================
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+
+  // ============================================================
+  // 固定挂载点
+  //
+  // ${localEnv:HOME} 跨平台解析:
+  //   macOS:      /Users/<用户名>
+  //   Linux:      /home/<用户名>
+  //   Windows:    /c/Users/<用户名>（WSL2 下等同于 Linux）
+  //
+  // mount 类型说明:
+  //   type=bind               直接映射宿主机路径
+  //   consistency=cached      宿主主机读写一致,容器内可缓存(性能优化)
+  //   readonly                只读挂载,防止误修改/删除
+  //
+  // 路径不存在的处理:
+  //   Docker 会直接报错并拒绝启动容器。
+  //   请确保宿主机对应路径已存在。可用以下命令创建:
+  //     mkdir -p ~/kai-fa/projects ~/kai-fa/data
+  // ============================================================
+  "mounts": [
+
+    // ① 项目代码目录 → /workspaces/projects
+    //    macOS:       /Users/<用户名>/kai-fa/projects
+    //    Linux:       /home/<用户名>/kai-fa/projects
+    //    Windows:     /c/Users/<用户名>/kai-fa/projects
+    //    作用: 存放所有项目的代码仓库。
+    //         容器内可同时访问多个项目,无需重复挂载。
+    //         可手动编辑此路径以匹配你的实际目录结构。
+    "source=${localEnv:HOME}/kai-fa/projects,target=/workspaces/projects,type=bind,consistency=cached",
+
+    // ② 数据目录 → /workspaces/data
+    //    macOS:       /Users/<用户名>/kai-fa/data
+    //    Linux:       /home/<用户名>/kai-fa/data
+    //    Windows:     /c/Users/<用户名>/kai-fa/data
+    //    作用: 存放数据文件、数据集、日志、测试数据等与代码分离的持久化内容。
+    //         可手动编辑此路径以匹配你的实际目录结构。
+    "source=${localEnv:HOME}/kai-fa/data,target=/workspaces/data,type=bind,consistency=cached",
+
+    // ③ SSH 密钥目录 → /home/vscode/.ssh（只读）
+    //    macOS:       /Users/<用户名>/.ssh
+    //    Linux:       /home/<用户名>/.ssh
+    //    Windows:     /c/Users/<用户名>/.ssh
+    //    作用: 容器内 Git 操作 (push/pull) 直接使用宿主机 SSH 密钥认证,
+    //         无需在容器内重新生成或配置。
+    //    只读原因: 防止容器内误操作 (如 rm -rf) 删除宿主机密钥。
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached,readonly",
+
+    // ④ Git 全局配置 → /home/vscode/.gitconfig（只读）
+    //    macOS:       /Users/<用户名>/.gitconfig
+    //    Linux:       /home/<用户名>/.gitconfig
+    //    Windows:     /c/Users/<用户名>/.gitconfig
+    //    作用: 继承宿主机的 Git user.name / user.email / 别名等配置,
+    //         避免每次重建容器后重新设置。
+    //    只读原因: 防止容器内操作覆盖宿主机配置。
+    //    注意: 若宿主机无此文件,启动时会输出警告但不影响使用。
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached,readonly"
+  ],
+
+  // ============================================================
+  // Features — 微软维护的即插即用功能模块
+  // 文档: https://containers.dev/features
+  // ============================================================
+  "features": {
+
+    // Docker-out-of-Docker: 将宿主机的 docker socket 挂载到容器内
+    //   容器内执行 docker 命令时实际操作宿主机的 Docker daemon,
+    //   共享镜像缓存,性能优于 Docker-in-Docker,无需特权模式。
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+
+    // Node.js: 使用 LTS 版本,附带 pnpm 包管理器
+    //   覆盖 universal 镜像自带的 Node.js 版本以确保为最新 LTS。
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts",
+      "pnpm": true
+    },
+
+    // Git: 自动从宿主机继承 user.name / user.email 配置
+    "ghcr.io/devcontainers/features/git:1": {},
+
+    // Common Utilities: Zsh / curl / git / less 等常用工具
+    //   configureZshAsDefaultShell 确保容器内默认 Shell 为 Zsh。
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true,
+      "username": "vscode",
+      "uid": "1000"
+    }
+  },
+
+  // ============================================================
+  // VS Code 自定义设置
+  // ============================================================
+  "customizations": {
+    "vscode": {
+
+      // 编辑器设置
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "editor.formatOnSave": true,
+        "files.autoSave": "onFocusChange"
+      },
+
+      // 自动安装的扩展
+      "extensions": [
+        "dbaeumer.vscode-eslint",          // ESLint
+        "esbenp.prettier-vscode",           // Prettier
+        "ms-python.python",                 // Python
+        "golang.go",                        // Go
+        "rust-lang.rust-analyzer"           // Rust
+      ]
+    }
+  },
+
+  // ============================================================
+  // 容器环境变量
+  // ============================================================
+  "containerEnv": {
+    // Docker-out-of-Docker 所需:
+    // 告诉容器内的 Docker CLI 通过 socket 与宿主机 Docker daemon 通信
+    "DOCKER_HOST": "unix:///var/run/docker.sock"
+  },
+
+  // ============================================================
+  // docker run 附加参数
+  // ============================================================
+  "runArgs": [
+    // 使用宿主机网络栈,简化网络访问,避免端口映射
+    "--network=host"
+  ],
+
+  // ============================================================
+  // 容器创建完成后执行
+  // ============================================================
+  "postCreateCommand": "echo 'Dev container ready.' && zsh"
+}
