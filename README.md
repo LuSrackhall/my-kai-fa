@@ -67,6 +67,21 @@ mkdir -p ~/kai-fa/projects ~/kai-fa/data
 ./scripts/start.sh my-project ~/kai-fa/projects/my-app
 ```
 
+### 方式三: VS Code 连接到脚本启动的容器
+
+如果你已经用 `start.sh` 启动了容器,想让 VS Code 连上去:
+
+1. 打开 VS Code
+2. 按 `Cmd+Shift+P` → 选择 **"Dev Containers: Attach to Running Container"**
+3. 在列表中选择你的容器名 (如 `my-project`)
+4. VS Code 几秒后连入,左下角显示容器名
+
+> **注意:** `Reopen in Container` 和 `Attach to Running Container` 是两条不同路径。
+> - `Reopen in Container` — VS Code 自己根据 `devcontainer.json` 构建并启动新容器
+> - `Attach to Running Container` — 连接到一个已经运行的容器 (脚本启动的)
+>
+> 两者的区别: `Reopen` 时会执行 `devcontainer.json` 中的 Features 和 `postCreateCommand`，而 `Attach` 不会。
+
 ## 多容器并行
 
 同一镜像可启动任意多个独立容器：
