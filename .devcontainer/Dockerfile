@@ -1,52 +1,97 @@
 # ============================================================
-# 基于微软 Dev Containers Base Ubuntu 镜像
+# 基于微软 Dev Containers Base Ubuntu (multi-arch)
 # 文档: https://github.com/devcontainers/images
-# 镜像: mcr.microsoft.com/devcontainers/base:ubuntu
 #
-# base:ubuntu 镜像已包含:
-#   - Ubuntu 基础系统
-#   - Git / curl / wget / vim / nano / jq / less
-#   - vscode 用户 (UID 1000)
-#   - Oh My Zsh + 常用插件
+# base:ubuntu 已包含: Ubuntu, Git, curl, wget, vim, jq,
+#   vscode 用户 (UID 1000), Oh My Zsh
 #
-# 语言运行时 (Node / Python / Go / Rust) 通过
-# devcontainer.json 的 Features 按需安装,不写入镜像。
+# 架构: linux/amd64 + linux/arm64 双原生支持
+#   Docker 自动选择与宿主机匹配的架构。
+#   跨架构构建使用 build.sh 的 --platform 参数。
 #
-# 架构支持:
-#   base:ubuntu 是 multi-arch 镜像,支持 linux/amd64 和 linux/arm64。
-#   Docker 自动选择与宿主机匹配的架构,无需 --platform。
-#   如需跨架构构建,使用 build.sh 的 --platform 参数。
+# 语言运行时:
+#   Node.js — nvm (版本管理器，构建时预装 LTS)
+#   Python  — 系统 python3 + pip + venv
+#   Go      — 官方二进制 (/usr/local/go)
+#   Rust    — rustup (版本管理器)
+#
+#   不包含: Java, .NET, PHP, Ruby
 # ============================================================
 FROM mcr.microsoft.com/devcontainers/base:ubuntu
 
 # ============================================================
-# 补充系统工具
+# 系统工具
 # ============================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ripgrep \       
-    fd-find \       
-    bat \           
-    htop \          
-    tmux \          
+    ripgrep \
+    fd-find \
+    bat \
+    htop \
+    tmux \
+    jq \
+    tree \
+    unzip \
+    zip \
+    less \
+    man-db \
+    build-essential \
+    curl \
+    wget \
+    ca-certificates \
+    gnupg \
+    lsb-release \
     && rm -rf /var/lib/apt/lists/*
-    # RUN apt-get update && apt-get install -y --no-install-recommends \
-    #     ripgrep \       # 高性能代码搜索 (rg)
-    #     fd-find \       # 高性能文件查找 (fd)
-    #     bat \           # 语法高亮 cat 替代 (batcat)
-    #     htop \          # 交互式进程监控
-    #     tmux \          # 终端复用器
-    #     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================
-# 用户与 Shell 配置
-# base:ubuntu 镜像默认 vscode 用户, UID 1000
+# Node.js — nvm (版本管理器)
+# 构建时预装一个 LTS 作为默认版本
 # ============================================================
-USER vscode
+ENV NVM_DIR=/usr/local/share/nvm
+RUN mkdir -p "$NVM_DIR" \
+    && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
+    && . "$NVM_DIR/nvm.sh" \
+    && nvm install --lts \
+    && nvm use --lts \
+    && nvm alias default 'lts/*'
 
+# ============================================================
+# Python — 系统 python3 + pip + venv
+# ============================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================================
+# Go — 官方二进制 (ARG TARGETARCH 自动匹配 arm64/amd64)
+# ============================================================
+ARG GO_VERSION=1.23.4
+ARG TARGETARCH
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH:-amd64}.tar.gz" \
+    | tar -xz -C /usr/local
+ENV PATH="/usr/local/go/bin:$PATH"
+
+# ============================================================
+# Rust — rustup (版本管理器)
+# ============================================================
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/home/vscode/.cargo/bin:$PATH"
+
+# ============================================================
+# Shell 初始化 — init-env.sh 统一管理所有版本管理器激活
+# ============================================================
+COPY .devcontainer/init-env.sh /usr/local/bin/init-env.sh
+RUN chmod +x /usr/local/bin/init-env.sh
+RUN echo 'source /usr/local/bin/init-env.sh' >> /home/vscode/.zshrc \
+    && echo 'source /usr/local/bin/init-env.sh' >> /home/vscode/.bashrc
+
+# ============================================================
 # Zsh 别名
-RUN echo 'alias ll="ls -alh"' >> ~/.zshrc \
-    && echo 'alias fd="fdfind"' >> ~/.zshrc \
-    && echo 'alias bat="batcat"' >> ~/.zshrc
+# ============================================================
+RUN echo 'alias ll="ls -alh"' >> /home/vscode/.zshrc \
+    && echo 'alias fd="fdfind"' >> /home/vscode/.zshrc \
+    && echo 'alias bat="batcat"' >> /home/vscode/.zshrc
 
-# 默认工作目录（挂载路径的父目录）
+USER vscode
 WORKDIR /workspaces

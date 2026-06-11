@@ -4,14 +4,16 @@
 
 ## 语言运行时
 
-通过微软 Dev Container Features 按需安装，不写入镜像：
+版本管理器预装在镜像层中，容器启动即用，运行时自由切换版本：
 
-| 运行时 | Feature |
-|--------|---------|
-| Node.js (LTS) + pnpm | `ghcr.io/devcontainers/features/node:1` |
-| Python (latest) | `ghcr.io/devcontainers/features/python:1` |
-| Go (latest) | `ghcr.io/devcontainers/features/go:1` |
-| Rust (latest) | `ghcr.io/devcontainers/features/rust:1` |
+| 运行时 | 版本管理器 | 默认版本 | 切版本 |
+|--------|-----------|---------|--------|
+| Node.js | nvm | LTS (构建时最新) | `nvm use 22` |
+| Python | 系统 python3 + pip + venv | Ubuntu 自带 | 通过 venv 隔离项目 |
+| Go | 官方二进制 `/usr/local/go` | 1.23.4 | 改 Dockerfile 中 GO_VERSION 重建镜像 |
+| Rust | rustup | stable | `rustup default nightly` |
+
+各管理器常用命令见 [docs/version-managers.md](docs/version-managers.md)。
 
 ## 架构支持
 
@@ -138,13 +140,16 @@ mkdir -p ~/kai-fa/projects ~/kai-fa/data
 | 容器内 `docker` 命令报权限错 | socket 权限不足 | 确认宿主机用户属于 `docker` 组 |
 | macOS 上容器网络不通 | Docker Desktop 网络限制 | `--network=host` 在 macOS 下表现为 localhost 互通 |
 | Apple Silicon 上拉取报 "no match for platform" | 某些镜像没有 ARM64 版本 | 使用 `--platform linux/amd64` 通过 Rosetta 2 运行 |
+| 容器内 `node`/`cargo` 等命令找不到 | init-env.sh 未 source | 手动执行 `source /usr/local/bin/init-env.sh` |
 
 ## 文件结构与职责
 
 | 文件 | 分类 | 职责 |
 |------|------|------|
-| `.devcontainer/Dockerfile` | 镜像定义 | 基于 `mcr.microsoft.com/devcontainers/base:ubuntu` (multi-arch)，补充 ripgrep/fd/bat 等 CLI 工具，配置 Zsh。语言运行时通过 Features 安装，不写入镜像 |
-| `.devcontainer/devcontainer.json` | 容器配置 | 声明固定挂载（`kai-fa/projects`、`kai-fa/data`、`.ssh`、`.gitconfig`），配置微软 Features（Docker-out-of-Docker、Node + pnpm、Python、Go、Rust、Git），VS Code 插件和设置，`--network=host` |
-| `scripts/build.sh` | 宿主机脚本 | 调用 `docker build` 构建 `safe-agent-dev:latest` 镜像。默认自动检测架构，支持 `--platform` 指定跨架构构建 |
-| `scripts/start.sh` | 宿主机脚本 | 按容器名管理生命周期：创建新容器（含固定挂载 + 专属工作区）、复用已有容器、强制重建（`-f`）、进入容器 Shell。支持 `--platform` 透传给 `build.sh` |
-| `README.md` | 文档 | 前置要求、架构说明、快速开始、多容器使用、路径自定义、故障排除 |
+| `.devcontainer/Dockerfile` | 镜像定义 | 基于 `base:ubuntu` (multi-arch)，安装 CLI 工具 + 版本管理器 (nvm / python3 / Go / rustup)，COPY init-env.sh，配置 Zsh。不包含 Java/.NET/PHP/Ruby |
+| `.devcontainer/init-env.sh` | Shell 初始化 | 统一激活所有版本管理器（nvm / Go PATH / rustup），被 .zshrc、.bashrc、postCreateCommand 三处 source |
+| `.devcontainer/devcontainer.json` | 容器配置 | 固定挂载 + 容器级 Features（Docker-out-of-Docker、Git、common-utils）+ VS Code 设置 |
+| `scripts/build.sh` | 宿主机脚本 | 构建 `safe-agent-dev:latest`，默认自动检测架构，支持 `--platform` |
+| `scripts/start.sh` | 宿主机脚本 | 容器生命周期管理（创建/复用/强制重建/进入），`-f` + `--platform` 透传 |
+| `README.md` | 文档 | 前置要求、架构说明、快速开始、多容器使用、故障排除 |
+| `docs/version-managers.md` | 参考 | nvm / pip / go / rustup 常用命令速查 |
