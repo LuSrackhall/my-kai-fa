@@ -17,13 +17,19 @@ FROM mcr.microsoft.com/devcontainers/universal:latest
 # universal 已包含多数常用 CLI，此处仅补遗
 # ============================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ripgrep \       # 高性能代码搜索 (rg)
-    fd-find \       # 高性能文件查找 (fd)
-    bat \           # 语法高亮 cat 替代 (batcat)
-    htop \          # 交互式进程监控
-    tmux \          # 终端复用器
+    ripgrep \       
+    fd-find \       
+    bat \           
+    htop \          
+    tmux \          
     && rm -rf /var/lib/apt/lists/*
-
+    # RUN apt-get update && apt-get install -y --no-install-recommends \
+    #     ripgrep \       
+    #     fd-find \       # 高性能文件查找 (fd)
+    #     bat \           # 语法高亮 cat 替代 (batcat)
+    #     htop \          # 交互式进程监控
+    #     tmux \          # 终端复用器
+    #     && rm -rf /var/lib/apt/lists/*
 # ============================================================
 # 补充全局运行时工具
 # ============================================================
