@@ -1,6 +1,24 @@
-# Safe Agent Dev Container
+# Safe Agent Dev Container (`dsh-safe` 分支)
 
-基于微软 [Dev Containers Base Ubuntu](https://github.com/devcontainers/images) 镜像构建的自定义开发容器环境。
+基于微软 [Dev Containers Base Ubuntu](https://github.com/devcontainers/images) 镜像构建的**隔离 AI Agent 开发容器**，为在真实 Linux 环境中运行 [DSH (DeepSeek Harness)](https://www.npmjs.com/package/@deepseek-ai/dsh) 而定制。
+
+> **本分支相对 `main` 的定制**（安全模型全面收紧）:
+>
+> | 项 | main | dsh-safe |
+> |----|------|----------|
+> | docker.sock (宿主 Docker 总开关) | 挂载进容器 | ❌ 移除 |
+> | `~/.ssh` / `~/.gitconfig` | 只读挂载进容器（只读防删不防读） | ❌ 移除，Git 身份改为持久化在交互区 |
+> | 网络 | `--network=host`（本机服务对容器可见） | ❌ 独立网络，仅映射 GUI 端口 3080 |
+> | 挂载模型 | projects + data 双固定挂载 + 每次指定路径 | ✅ 唯一挂载：长久交互区 `DSH_SAFE_DIR` 整块挂载 |
+> | DSH 支持 | 无 | ✅ `dsh-setup` 一键安装/更新（固化命令不锁版本） |
+
+## 安全模型
+
+容器可见的**唯一**宿主机目录是长久交互区 `DSH_SAFE_DIR`；此外：
+
+- 无 docker.sock —— 容器内 agent 无法借宿主 Docker 越过挂载边界
+- 无 `.ssh` / `.gitconfig` 挂载 —— 宿主密钥与配置不被读取外带
+- 无 `--privileged`、无 host 网络 —— 仅开放 `127.0.0.1:3080` 给 dsh web GUI
 
 ## 语言运行时
 
@@ -17,139 +35,104 @@
 
 ## 架构支持
 
-基础镜像 `mcr.microsoft.com/devcontainers/base:ubuntu` 是 multi-arch 镜像，同时支持 `linux/amd64` 和 `linux/arm64`。
-
-| 宿主机 | 默认架构 | 性能 |
-|--------|---------|------|
-| Apple Silicon Mac (M1/M2/M3) | `linux/arm64` | 原生 ARM64 |
-| Intel Mac | `linux/amd64` | 原生 AMD64 |
-| Linux (x86-64) | `linux/amd64` | 原生 AMD64 |
-| Windows (WSL2) | `linux/amd64` | 原生 AMD64 |
-
-```bash
-# 默认: 自动选择原生架构
-./scripts/build.sh
-
-# 跨架构 (M 系列 Mac 上构建 Rosetta 模拟的 amd64 版本)
-./scripts/build.sh --platform linux/amd64
-```
+基础镜像 multi-arch，Docker 自动选择原生架构：Apple Silicon → `linux/arm64`，Intel/PC → `linux/amd64`。跨架构用 `--platform` 参数。
 
 ## 前置要求
 
-| 依赖 | 最低版本 | 检查命令 |
-|------|---------|----------|
-| Docker | 20.10+ | `docker --version` |
-| VS Code | 1.85+ | `code --version` |
-| VS Code Dev Containers 扩展 | 最新 | 扩展商店搜索安装 |
+| 依赖 | 说明 |
+|------|------|
+| Docker Desktop **或** OrbStack | 已启动即可。OrbStack 天然可挂载任意 macOS 路径;Docker Desktop 需 File Sharing 包含交互区所在卷(默认名单已含 `/Volumes`) |
+| 交互区目录 | 缺失时 `start.sh` 会自动创建;也可手动 `mkdir -p ~/dsh-safe` |
+| VS Code (可选) | 仅 Dev Containers 入口需要 |
 
-启动前请确保宿主机以下目录存在:
+环境变量 `DSH_SAFE_DIR` 指定交互区位置，未设置时回退 `~/dsh-safe`。可写入 shell 配置持久化：
 
 ```bash
-mkdir -p ~/kai-fa/projects ~/kai-fa/data
+echo 'export DSH_SAFE_DIR=/Volumes/SSD980/dsh-safe' >> ~/.zshrc   # 本机示例
 ```
-
-> 若目录不存在，容器启动时会明确报错并提示缺失路径。
 
 ## 快速开始
 
-### 方式一: VS Code Dev Containers
-
-1. 在 VS Code 中打开本项目
-2. 按 `Cmd+Shift+P`（macOS）或 `Ctrl+Shift+P`（Windows/Linux）
-3. 选择 **"Dev Containers: Reopen in Container"**
-4. 等待镜像构建完成（首次约 3-5 分钟，后续秒级进入）
-
-### 方式二: 宿主机脚本
+### 方式一: start.sh CLI（推荐）
 
 ```bash
-# 构建镜像
-./scripts/build.sh
-
-# 启动容器
-./scripts/start.sh my-project ~/kai-fa/projects/my-app
+./scripts/build.sh          # 构建镜像 (首次约 3-5 分钟)
+./scripts/start.sh main     # 启动并进入容器
 ```
 
-### 方式三: VS Code 连接到脚本启动的容器
+进入容器后安装 dsh 并启动：
 
-如果你已经用 `start.sh` 启动了容器,想让 VS Code 连上去:
+```zsh
+dsh-setup                   # 安装最新版 dsh (以后更新也是这条命令)
+dsh                         # 启动 DeepSeek Harness
+# Mac 浏览器访问 http://127.0.0.1:3080
+```
 
-1. 打开 VS Code
-2. 按 `Cmd+Shift+P` → 选择 **"Dev Containers: Attach to Running Container"**
-3. 在列表中选择你的容器名 (如 `my-project`)
-4. VS Code 几秒后连入,左下角显示容器名
+### 方式二: VS Code Dev Containers
 
-> **注意:** `Reopen in Container` 和 `Attach to Running Container` 是两条不同路径。
-> - `Reopen in Container` — VS Code 自己根据 `devcontainer.json` 构建并启动新容器
-> - `Attach to Running Container` — 连接到一个已经运行的容器 (脚本启动的)
->
-> 两者的区别: `Reopen` 时会执行 `devcontainer.json` 中的 Features 和 `postCreateCommand`，而 `Attach` 不会。
+VS Code 打开本项目 → `Cmd+Shift+P` → **Dev Containers: Reopen in Container**。
+
+### 方式三: Attach 到脚本启动的容器
+
+`Cmd+Shift+P` → **Dev Containers: Attach to Running Container** → 选择容器名。
+（注意: Reopen 会执行 Features/postCreate，Attach 不会。）
+
+## 长久交互区与持久化
+
+```
+宿主机 $DSH_SAFE_DIR  ──bind mount──►  容器内 /workspaces/dsh-safe
+├── 项目A/  项目B/  ...               ← 建子文件夹即新增项目,零操作
+├── git/gitconfig                     ← Git 身份(见下),跨容器重建保留
+└── (dsh 的配置/会话状态建议也放这里)   ← 容器 -f 重建后依然存在
+```
+
+Git 身份首次配置（容器内执行一次即可）：
+
+```zsh
+mkdir -p /workspaces/dsh-safe/git
+git config --file /workspaces/dsh-safe/git/gitconfig user.name  "你的名字"
+git config --file /workspaces/dsh-safe/git/gitconfig user.email "你的邮箱"
+```
+
+之后新 Shell 自动启用（由 `init-env.sh` 设置 `GIT_CONFIG_GLOBAL`）。
 
 ## 多容器并行
 
-同一镜像可启动任意多个独立容器：
-
 ```bash
-# 同时运行多个独立容器
-./scripts/start.sh project-a ~/kai-fa/projects/foo
-./scripts/start.sh project-b ~/kai-fa/projects/bar
-./scripts/start.sh playground ~/Desktop/experiment
-
-# 两个容器挂载同一路径 (各自独立,互不影响)
-./scripts/start.sh session-1 ~/kai-fa/projects/shared
-./scripts/start.sh session-2 ~/kai-fa/projects/shared
-
-# 强制重建容器 (镜像更新后或环境被搞脏时)
-./scripts/start.sh project-a ~/kai-fa/projects/foo -f
-
-# 强制重建 + 指定 amd64 架构 (M 系列 Mac 上 Rosetta 模拟)
-./scripts/start.sh project-a ~/kai-fa/projects/foo -f --platform linux/amd64
+./scripts/start.sh session-1
+./scripts/start.sh session-2        # 注意: 3080 端口同一时刻只能归一个容器
+./scripts/start.sh proj-a /Volumes/SSD980/dsh-safe/foo   # 额外把 foo 挂为本次主目录
+./scripts/start.sh main -f          # 环境被搞脏时重置容器(dsh 重跑 dsh-setup 即恢复)
 ```
 
-## 容器内路径结构
+> 提示: 多个容器共享同一交互区时彼此可见区内全部项目——"容器间二次隔离"不属于本设计目标。
 
-启动 `start.sh project-a ~/Desktop/foo` 后,容器内可见:
+## 自定义
 
-```
-/workspaces/
-├── foo/                  ← 专属工作区 (来自 start.sh 参数)
-├── projects/             ← 全局共享目录 (来自 ~/kai-fa/projects)
-└── data/                 ← 全局共享目录 (来自 ~/kai-fa/data)
-
-/home/vscode/
-├── .ssh/                 ← 只读,继承宿主机 SSH 密钥
-└── .gitconfig            ← 只读,继承宿主机 Git 配置
-```
-
-## 自定义路径
-
-### 修改固定挂载
-
-编辑 `.devcontainer/devcontainer.json` 的 `"mounts"` 数组,修改 `source` 字段为目标路径。注释中已标注各路径的跨平台解析方式和作用。
-
-### 修改容器内挂载名
-
-编辑 `scripts/start.sh` 中 `MOUNT_BASENAME` 相关逻辑。
+| 想改什么 | 改哪里 |
+|----------|--------|
+| 交互区路径 | 环境变量 `DSH_SAFE_DIR`（无需改文件） |
+| GUI 端口 | `scripts/start.sh` 中 `DSH_GUI_PORT` 与 `.devcontainer/devcontainer.json` 中 `forwardPorts` |
+| 额外固定挂载 | `.devcontainer/devcontainer.json` 的 `"mounts"` 数组 |
 
 ## 故障排除
 
 | 问题 | 原因 | 解决 |
 |------|------|------|
-| 启动报 "no such file or directory" | 宿主机挂载路径不存在 | `mkdir -p ~/kai-fa/projects ~/kai-fa/data` |
-| 提示 "Cannot connect to Docker daemon" | Docker socket 未正确挂载 | 确认 `/var/run/docker.sock` 存在; 重启 Docker Desktop |
-| VS Code 插件未自动安装 | 网络问题导致 Feature 安装失败 | `Cmd+Shift+P` → "Developer: Reload Window" 触发重装 |
-| 容器内 `docker` 命令报权限错 | socket 权限不足 | 确认宿主机用户属于 `docker` 组 |
-| macOS 上容器网络不通 | Docker Desktop 网络限制 | `--network=host` 在 macOS 下表现为 localhost 互通 |
-| Apple Silicon 上拉取报 "no match for platform" | 某些镜像没有 ARM64 版本 | 使用 `--platform linux/amd64` 通过 Rosetta 2 运行 |
-| 容器内 `node`/`cargo` 等命令找不到 | init-env.sh 未 source | 手动执行 `source /usr/local/bin/init-env.sh` |
+| 报 "mount path not shared"(仅 Docker Desktop) | 未共享该卷 | Settings → Resources → File sharing 勾选对应路径;OrbStack 无此问题 |
+| 浏览器打不开 127.0.0.1:3080 | dsh 未启动或端口被其他容器占用 | 容器内先跑 `dsh`;或换端口映射 |
+| 容器内 `dsh` 找不到 | 新 Shell 未加载 PATH 或尚未安装 | `dsh-setup` 安装;或 `source /usr/local/bin/init-env.sh` |
+| 容器内 `node`/`cargo` 找不到 | init-env.sh 未 source | 手动执行 `source /usr/local/bin/init-env.sh` |
+| Apple Silicon 拉取报 platform 错 | 个别镜像无 ARM64 版本 | 加 `--platform linux/amd64` 走 Rosetta |
+| VS Code 插件未自动安装 | 网络问题 | Reload Window 重试 |
 
 ## 文件结构与职责
 
 | 文件 | 分类 | 职责 |
 |------|------|------|
-| `.devcontainer/Dockerfile` | 镜像定义 | 基于 `base:ubuntu` (multi-arch)，安装 CLI 工具 + 版本管理器 (nvm / python3 / Go / rustup)，COPY init-env.sh，配置 Zsh。不包含 Java/.NET/PHP/Ruby |
-| `.devcontainer/init-env.sh` | Shell 初始化 | 统一激活所有版本管理器（nvm / Go PATH / rustup），被 .zshrc、.bashrc、postCreateCommand 三处 source |
-| `.devcontainer/devcontainer.json` | 容器配置 | 固定挂载 + 容器级 Features（Docker-out-of-Docker、Git、common-utils）+ VS Code 设置 |
-| `scripts/build.sh` | 宿主机脚本 | 构建 `safe-agent-dev:latest`，默认自动检测架构，支持 `--platform` |
-| `scripts/start.sh` | 宿主机脚本 | 容器生命周期管理（创建/复用/强制重建/进入），`-f` + `--platform` 透传 |
-| `README.md` | 文档 | 前置要求、架构说明、快速开始、多容器使用、故障排除 |
-| `docs/version-managers.md` | 参考 | nvm / pip / go / rustup 常用命令速查 |
+| `.devcontainer/Dockerfile` | 镜像定义 | base:ubuntu + CLI 工具 + 版本管理器 + COPY init-env/dsh-setup |
+| `.devcontainer/init-env.sh` | Shell 初始化 | 版本管理器激活 + npm 用户级前缀 + 交互区 gitconfig 接线 |
+| `.devcontainer/dsh-setup.sh` | DSH 引导 | 一条命令安装/更新 @deepseek-ai/dsh 到用户级 npm 前缀 |
+| `.devcontainer/devcontainer.json` | 容器配置 | 交互区参数化挂载 + Features + forwardPorts(仅 3080) |
+| `scripts/build.sh` | 宿主机脚本 | 构建 `safe-agent-dev:latest`,支持 `--platform` |
+| `scripts/start.sh` | 宿主机脚本 | 容器生命周期: 创建/复用/强制重建/进入;安全运行参数在此落地 |

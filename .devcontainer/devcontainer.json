@@ -14,60 +14,24 @@
   },
 
   // ============================================================
-  // 固定挂载点
+  // 固定挂载点 — 长久交互区（唯一挂载，安全边界）
   //
-  // ${localEnv:HOME} 跨平台解析:
-  //   macOS:      /Users/<用户名>
-  //   Linux:      /home/<用户名>
-  //   Windows:    /c/Users/<用户名>（WSL2 下等同于 Linux）
+  // 宿主机路径由环境变量 DSH_SAFE_DIR 决定,未设置时回退到 ~/dsh-safe:
+  //   macOS:   /Volumes/SSD980/dsh-safe (本机) 或 /Users/<用户名>/dsh-safe
+  //   Linux:   /home/<用户名>/dsh-safe
   //
-  // mount 类型说明:
-  //   type=bind               直接映射宿主机路径
-  //   consistency=cached      宿主主机读写一致,容器内可缓存(性能优化)
-  //   readonly                只读挂载,防止误修改/删除
+  // 隔离原则:
+  //   - 这是容器可见的唯一宿主机目录,容器内的一切写入若需持久化,
+  //     都应放在 /workspaces/dsh-safe 内。
+  //   - 不挂载宿主机 .ssh / .gitconfig 等敏感文件(防读取外带);
+  //     Git 身份配置持久化在 <DSH_SAFE_DIR>/git/gitconfig,见 init-env.sh。
   //
   // 路径不存在的处理:
-  //   Docker 会直接报错并拒绝启动容器。
-  //   请确保宿主机对应路径已存在。可用以下命令创建:
-  //     mkdir -p ~/kai-fa/projects ~/kai-fa/data
+  //   Docker 会直接报错并拒绝启动容器。请先创建:
+  //     mkdir -p "${DSH_SAFE_DIR:-$HOME/dsh-safe}"
   // ============================================================
   "mounts": [
-
-    // ① 项目代码目录 → /workspaces/projects
-    //    macOS:       /Users/<用户名>/kai-fa/projects
-    //    Linux:       /home/<用户名>/kai-fa/projects
-    //    Windows:     /c/Users/<用户名>/kai-fa/projects
-    //    作用: 存放所有项目的代码仓库。
-    //         容器内可同时访问多个项目,无需重复挂载。
-    //         可手动编辑此路径以匹配你的实际目录结构。
-    "source=${localEnv:HOME}/kai-fa/projects,target=/workspaces/projects,type=bind,consistency=cached",
-
-    // ② 数据目录 → /workspaces/data
-    //    macOS:       /Users/<用户名>/kai-fa/data
-    //    Linux:       /home/<用户名>/kai-fa/data
-    //    Windows:     /c/Users/<用户名>/kai-fa/data
-    //    作用: 存放数据文件、数据集、日志、测试数据等与代码分离的持久化内容。
-    //         可手动编辑此路径以匹配你的实际目录结构。
-    "source=${localEnv:HOME}/kai-fa/data,target=/workspaces/data,type=bind,consistency=cached",
-
-    // ③ SSH 密钥目录 → /home/vscode/.ssh（只读）
-    //    macOS:       /Users/<用户名>/.ssh
-    //    Linux:       /home/<用户名>/.ssh
-    //    Windows:     /c/Users/<用户名>/.ssh
-    //    作用: 容器内 Git 操作 (push/pull) 直接使用宿主机 SSH 密钥认证,
-    //         无需在容器内重新生成或配置。
-    //    只读原因: 防止容器内误操作 (如 rm -rf) 删除宿主机密钥。
-    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached,readonly",
-
-    // ④ Git 全局配置 → /home/vscode/.gitconfig（只读）
-    //    macOS:       /Users/<用户名>/.gitconfig
-    //    Linux:       /home/<用户名>/.gitconfig
-    //    Windows:     /c/Users/<用户名>/.gitconfig
-    //    作用: 继承宿主机的 Git user.name / user.email / 别名等配置,
-    //         避免每次重建容器后重新设置。
-    //    只读原因: 防止容器内操作覆盖宿主机配置。
-    //    注意: 若宿主机无此文件,启动时会输出警告但不影响使用。
-    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached,readonly"
+    "source=${localEnv:DSH_SAFE_DIR:${localEnv:HOME}/dsh-safe},target=/workspaces/dsh-safe,type=bind,consistency=cached"
   ],
 
   // ============================================================
@@ -76,10 +40,7 @@
   // ============================================================
   "features": {
 
-    // Docker-out-of-Docker: 将宿主机的 docker socket 挂载到容器内
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
-
-    // Git: 自动从宿主机继承 user.name / user.email 配置
+    // Git: 容器内自带 git 工具
     "ghcr.io/devcontainers/features/git:1": {},
 
     // Common Utilities: Zsh / curl / git / less 等常用工具
@@ -90,6 +51,9 @@
       "uid": "1000"
     }
 
+    // 安全说明: 不引入 docker-outside-of-docker。
+    // docker.sock 等于宿主机 Docker 的总控制开关,容器内 agent 可借它
+    // 再起挂载任意路径的容器,绕过"仅可操作挂载目录"的隔离边界。
     // 语言运行时 (Node/Python/Go/Rust) 不在此处配置。
     // 它们已通过版本管理器预装在 Dockerfile 镜像层中，
     // 由 init-env.sh 在 Shell 启动时统一激活。
@@ -120,21 +84,20 @@
   },
 
   // ============================================================
-  // 容器环境变量
+  // 网络 — 独立网络 + 仅开放 dsh web GUI 端口
+  //
+  // 不使用 --network=host: host 模式会让容器内 agent 访问到
+  // 宿主机本机运行的其他服务与局域网,破坏隔离。
+  // forwardPorts 仅把容器的 3080 端口(dsh web GUI 默认端口)
+  // 转发到宿主机 localhost;若 dsh 使用其他端口,在此追加即可。
   // ============================================================
-  "containerEnv": {
-    // Docker-out-of-Docker 所需:
-    // 告诉容器内的 Docker CLI 通过 socket 与宿主机 Docker daemon 通信
-    "DOCKER_HOST": "unix:///var/run/docker.sock"
+  "forwardPorts": [3080],
+  "portsAttributes": {
+    "3080": {
+      "label": "dsh web GUI",
+      "onAutoForward": "openBrowser"
+    }
   },
-
-  // ============================================================
-  // docker run 附加参数
-  // ============================================================
-  "runArgs": [
-    // 使用宿主机网络栈,简化网络访问,避免端口映射
-    "--network=host"
-  ],
 
   // ============================================================
   // 容器创建完成后执行

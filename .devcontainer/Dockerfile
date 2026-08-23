@@ -82,9 +82,16 @@ ENV PATH="/home/vscode/.cargo/bin:$PATH"
 # Shell 初始化 — init-env.sh 统一管理所有版本管理器激活
 # ============================================================
 COPY .devcontainer/init-env.sh /usr/local/bin/init-env.sh
-RUN chmod +x /usr/local/bin/init-env.sh
+RUN chmod 755 /usr/local/bin/init-env.sh
 RUN echo 'source /usr/local/bin/init-env.sh' >> /home/vscode/.zshrc \
     && echo 'source /usr/local/bin/init-env.sh' >> /home/vscode/.bashrc
+
+# ============================================================
+# DSH 引导 — dsh-setup 统一安装/更新 DeepSeek Harness
+# 固化"命令"而非"版本": 容器内执行 dsh-setup 即得最新版 dsh
+# ============================================================
+COPY .devcontainer/dsh-setup.sh /usr/local/bin/dsh-setup
+RUN chmod 755 /usr/local/bin/dsh-setup
 
 # ============================================================
 # Zsh 别名

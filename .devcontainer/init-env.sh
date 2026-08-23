@@ -19,3 +19,17 @@ export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
 
 # ---- Rust (rustup + cargo) ----
 [ -s "$HOME/.cargo/env" ] && \. "$HOME/.cargo/env"
+
+# ---- npm 用户级全局前缀 (dsh 等全局 CLI 安装于此) ----
+# dsh 通过 dsh-setup 安装到这里;容器重建后重跑 dsh-setup 即可恢复。
+export NPM_CONFIG_PREFIX="$HOME/.npm-global"
+export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
+
+# ---- Git 身份配置持久化 (存放在交互区,容器重建不丢) ----
+# 首次配置(容器内执行):
+#   git config --file /workspaces/dsh-safe/git/gitconfig user.name  "你的名字"
+#   git config --file /workspaces/dsh-safe/git/gitconfig user.email "你的邮箱"
+# 存在后自动启用,替代宿主机 ~/.gitconfig(不再挂载,避免敏感信息进容器)。
+if [ -f /workspaces/dsh-safe/git/gitconfig ]; then
+    export GIT_CONFIG_GLOBAL=/workspaces/dsh-safe/git/gitconfig
+fi

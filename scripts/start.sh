@@ -3,15 +3,25 @@
 # start.sh — 按名启动开发容器
 #
 # 用法:
-#   ./scripts/start.sh <容器名> <宿主机路径>                            首次启动,或进入已有容器
-#   ./scripts/start.sh <容器名> <宿主机路径> -f                         强制删除旧容器并新建
-#   ./scripts/start.sh <容器名> <宿主机路径> -f --platform linux/amd64  强制重建 + 指定架构
-#   ./scripts/start.sh <容器名> <宿主机路径> --platform linux/arm64      指定架构
+#   ./scripts/start.sh <容器名>                          启动/进入容器 (只挂长久交互区)
+#   ./scripts/start.sh <容器名> <宿主机路径>              额外挂载一个专属工作区
+#   ./scripts/start.sh <容器名> [宿主机路径] -f           强制删除旧容器并新建
+#   ./scripts/start.sh <容器名> [宿主机路径] -f --platform linux/amd64  强制重建 + 指定架构
 #
 # 示例:
-#   ./scripts/start.sh my-project ~/kai-fa/projects/foo
-#   ./scripts/start.sh my-project ~/kai-fa/projects/foo -f
-#   ./scripts/start.sh playground ~/Desktop/experiment --platform linux/amd64
+#   ./scripts/start.sh main                                # 日常入口: 只挂 dsh-safe 交互区
+#   ./scripts/start.sh proj-a /Volumes/SSD980/dsh-safe/foo # 额外把 foo 挂为本次主目录
+#   ./scripts/start.sh main -f                             # 环境搞脏时重置容器
+#
+# 长久交互区 (--):
+#   宿主机路径取环境变量 DSH_SAFE_DIR,未设置时回退 ~/dsh-safe。
+#   它始终挂载到容器内 /workspaces/dsh-safe,是容器可见的唯一宿主目录;
+#   dsh 的配置/会话状态也持久化在这里,容器重建不丢失。
+#
+# 安全模型:
+#   - 不挂载 docker.sock (宿主 Docker 总开关,等于隔离后门)
+#   - 不挂载 ~/.ssh / ~/.gitconfig (只读防删不防读)
+#   - 不使用 --network=host,仅映射 127.0.0.1:3080 → 容器 3080 (dsh web GUI)
 #
 # 架构说明 (--platform):
 #   默认: Docker 自动选择与宿主机匹配的原生架构。
@@ -41,13 +51,9 @@
 #   │   │
 #   │   └─ 不存在
 #   │       └─ 创建新容器 → docker run -it --name <容器名> \
-#   │                          -v <指定路径>:/workspaces/<basename> \
-#   │                          -v $HOME/kai-fa/projects:/workspaces/projects \
-#   │                          -v $HOME/kai-fa/data:/workspaces/data \
-#   │                          -v $HOME/.ssh:/home/vscode/.ssh:ro \
-#   │                          -v $HOME/.gitconfig:/home/vscode/.gitconfig:ro \
-#   │                          -v /var/run/docker.sock:/var/run/docker.sock \
-#   │                          --network=host \
+#   │                          -p 127.0.0.1:3080:3080 \
+#   │                          -v ${DSH_SAFE_DIR:-~/dsh-safe}:/workspaces/dsh-safe \
+#   │                          [-v <指定路径>:/workspaces/<basename>] \
 #   │                          safe-agent-dev:latest zsh
 #   │
 #   └─ 使用 Ctrl+D 或 exit 退出容器 Shell
@@ -55,13 +61,14 @@
 #
 # 前置条件:
 #   - Docker 已安装并运行
-#   - 当前工作目录为项目根目录
-#   - ~/kai-fa/projects 和 ~/kai-fa/data 目录已创建 (mkdir -p)
-#   - ~/.ssh 目录存在
+#   - 交互区目录存在 (缺失时本脚本会自动创建)
 #
 # 多容器注意:
 #   - 同一镜像可启动任意多个容器,互不干扰
-#   - 两个容器可挂载相同宿主机路径 (各自独立的文件视图)
+#   - 注意: 多个容器共享同一交互区时,彼此可见区内全部项目
+#     ("容器间二次隔离"不属于本设计目标)
+#   - 同一宿主机端口 3080 只能被一个运行中的容器占用,
+#     同时跑多个容器时,后者需自行调整 -p 映射或仅保留一个
 #   - 容器名必须唯一 (Docker 要求)
 # ============================================================
 
@@ -73,6 +80,12 @@ set -euo pipefail
 readonly IMAGE_NAME="safe-agent-dev"
 readonly IMAGE_TAG="latest"
 readonly FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
+
+# dsh web GUI 端口 (容器内端口;宿主机侧固定绑 127.0.0.1)
+readonly DSH_GUI_PORT=3080
+
+# 长久交互区: 环境变量优先,回退 ~/dsh-safe
+SAFE_DIR="${DSH_SAFE_DIR:-${HOME}/dsh-safe}"
 
 # 颜色输出
 readonly COLOR_RESET='\033[0m'
@@ -91,31 +104,34 @@ error()   { echo -e "${COLOR_RED}[ERROR]${COLOR_RESET} $*" >&2; }
 
 print_usage() {
     echo "用法:"
-    echo "  $0 <容器名> <宿主机路径>                            启动/进入容器"
-    echo "  $0 <容器名> <宿主机路径> -f                         强制重建容器"
-    echo "  $0 <容器名> <宿主机路径> --platform linux/amd64      指定架构"
-    echo "  $0 <容器名> <宿主机路径> -f --platform linux/amd64   强制重建 + 指定架构"
+    echo "  $0 <容器名>                          启动/进入容器 (只挂长久交互区)"
+    echo "  $0 <容器名> <宿主机路径>              额外挂载一个专属工作区"
+    echo "  $0 <容器名> [宿主机路径] -f           强制重建容器"
+    echo "  $0 <容器名> [宿主机路径] --platform linux/amd64  指定架构"
+    echo ""
+    echo "环境变量:"
+    echo "  DSH_SAFE_DIR  长久交互区路径 (默认 ~/dsh-safe)"
     echo ""
     echo "示例:"
-    echo "  $0 my-project ~/kai-fa/projects/foo"
-    echo "  $0 my-project ~/kai-fa/projects/foo -f"
-    echo "  $0 my-project ~/kai-fa/projects/foo -f --platform linux/amd64"
+    echo "  $0 main"
+    echo "  $0 proj-a /Volumes/SSD980/dsh-safe/foo"
+    echo "  $0 main -f"
 }
 
 # ============================================================
-# 参数解析
+# 参数解析 — <容器名> 必填, [宿主机路径] 可选, 其后跟开关
 # ============================================================
-if [ $# -lt 2 ]; then
+if [ $# -lt 1 ]; then
     print_usage
     exit 1
 fi
 
 CONTAINER_NAME="$1"
-HOST_PATH="$2"
+shift
+
+HOST_PATH=""
 FORCE_RECREATE=false
 PLATFORM_ARG=""
-
-shift 2
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -132,24 +148,38 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         *)
-            error "未知参数: $1"
-            print_usage
-            exit 1
+            if [ -z "$HOST_PATH" ]; then
+                HOST_PATH="$1"
+                shift
+            else
+                error "未知参数: $1"
+                print_usage
+                exit 1
+            fi
             ;;
     esac
 done
 
-# 解析宿主机路径为绝对路径
-HOST_PATH="$(cd "$HOST_PATH" 2>/dev/null && pwd || true)"
-if [ -z "$HOST_PATH" ]; then
-    error "宿主机路径不存在或无法访问: $2"
-    error "请确认路径正确后再试。"
-    exit 1
+# ============================================================
+# 解析长久交互区路径 (真实绝对路径,兼容软链)
+# ============================================================
+if [ ! -d "$SAFE_DIR" ]; then
+    info "交互区目录不存在,自动创建: ${SAFE_DIR}"
+    mkdir -p "$SAFE_DIR"
 fi
+SAFE_DIR="$(cd "$SAFE_DIR" && pwd)"
 
-# 生成容器内挂载目标路径
-MOUNT_BASENAME="$(basename "$HOST_PATH")"
-CONTAINER_TARGET="/workspaces/${MOUNT_BASENAME}"
+# 可选的专属工作区路径解析
+EXTRA_MOUNT_ARGS=()
+if [ -n "$HOST_PATH" ]; then
+    HOST_PATH="$(cd "$HOST_PATH" 2>/dev/null && pwd || true)"
+    if [ -z "$HOST_PATH" ]; then
+        error "宿主机路径不存在或无法访问"
+        exit 1
+    fi
+    MOUNT_BASENAME="$(basename "$HOST_PATH")"
+    EXTRA_MOUNT_ARGS=(-v "${HOST_PATH}:/workspaces/${MOUNT_BASENAME}")
+fi
 
 # ============================================================
 # 检查镜像是否存在,不存在则自动构建
@@ -201,47 +231,18 @@ fi
 # 创建新容器
 # ============================================================
 info "创建新容器: ${CONTAINER_NAME}"
-info "  宿主机路径:  ${HOST_PATH}"
-info "  容器内路径:  ${CONTAINER_TARGET}"
-echo ""
-
-# 检查固定挂载所需的宿主机目录
-REQUIRED_DIRS=(
-    "${HOME}/kai-fa/projects"
-    "${HOME}/kai-fa/data"
-    "${HOME}/.ssh"
-)
-
-MISSING_DIRS=()
-for dir in "${REQUIRED_DIRS[@]}"; do
-    if [ ! -d "$dir" ] && [ ! -f "$dir" ]; then
-        MISSING_DIRS+=("$dir")
-    fi
-done
-
-if [ ${#MISSING_DIRS[@]} -gt 0 ]; then
-    error "以下宿主机目录不存在:"
-    for dir in "${MISSING_DIRS[@]}"; do
-        error "  - ${dir}"
-    done
-    error ""
-    error "请先创建所需目录:"
-    error "  mkdir -p ~/kai-fa/projects ~/kai-fa/data"
-    error ""
-    error "容器创建已中止。"
-    exit 1
+info "  长久交互区:  ${SAFE_DIR} → /workspaces/dsh-safe"
+if [ -n "$HOST_PATH" ]; then
+    info "  专属工作区:  ${HOST_PATH} → /workspaces/${MOUNT_BASENAME}"
 fi
+echo ""
 
 docker run -it \
     --name "${CONTAINER_NAME}" \
     --hostname "${CONTAINER_NAME}" \
-    --network=host \
-    -v "${HOST_PATH}:${CONTAINER_TARGET}" \
-    -v "${HOME}/kai-fa/projects:/workspaces/projects" \
-    -v "${HOME}/kai-fa/data:/workspaces/data" \
-    -v "${HOME}/.ssh:/home/vscode/.ssh:ro" \
-    -v "${HOME}/.gitconfig:/home/vscode/.gitconfig:ro" \
-    -v /var/run/docker.sock:/var/run/docker.sock \
+    -p "127.0.0.1:${DSH_GUI_PORT}:${DSH_GUI_PORT}" \
+    -v "${SAFE_DIR}:/workspaces/dsh-safe" \
+    ${EXTRA_MOUNT_ARGS[@]+"${EXTRA_MOUNT_ARGS[@]}"} \
     "${FULL_IMAGE}" \
     zsh
 
@@ -254,7 +255,7 @@ if [ $EXIT_CODE -ne 0 ]; then
     warn "容器退出码: ${EXIT_CODE}"
     info "容器 ${CONTAINER_NAME} 可能已停止。"
     info "使用以下命令重新进入或删除:"
-    info "  重新进入:  $0 ${CONTAINER_NAME} ${HOST_PATH}"
+    info "  重新进入:  $0 ${CONTAINER_NAME}"
     info "  删除容器:  docker rm ${CONTAINER_NAME}"
-    info "  强制重建:  $0 ${CONTAINER_NAME} ${HOST_PATH} -f"
+    info "  强制重建:  $0 ${CONTAINER_NAME} -f"
 fi
