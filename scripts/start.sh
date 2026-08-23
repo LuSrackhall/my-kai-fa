@@ -52,7 +52,7 @@
 #   │   │
 #   │   └─ 不存在
 #   │       └─ 创建新容器 → docker run -it --name <容器名> \
-#   │                          -p 127.0.0.1:13080:3080 \
+#   │                          -p 127.0.0.1:13080:3081 \
 #   │                          -v ${DSH_SAFE_DIR:-~/dsh-safe}:/workspaces/dsh-safe \
 #   │                          [-v <指定路径>:/workspaces/<basename>] \
 #   │                          safe-agent-dev:latest zsh
@@ -82,9 +82,13 @@ readonly IMAGE_NAME="safe-agent-dev"
 readonly IMAGE_TAG="latest"
 readonly FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 
-# dsh web GUI 端口: 容器内固定 3080;宿主机侧用 13080 ——
-# 避开宿主机自身 dsh 已占用的 127.0.0.1:3080,两者互不干扰
-readonly DSH_GUI_CONTAINER_PORT=3080
+# dsh web GUI 端口链: 宿主 127.0.0.1:13080 → 容器 3081(socat 中继)
+#   → 容器内 127.0.0.1:3080(dsh 本体)。
+# 为什么这么绕: dsh 出于安全拒绝绑定 0.0.0.0(只许 127.0.0.1),
+# 而 Docker 端口映射够不到容器回环,故由 dsh-web 内置的
+# socat 在容器内做一跳 3081→3080 转发。
+# 宿主侧用 13080 是为了避开主机自身 dsh 占用的 3080。
+readonly DSH_GUI_CONTAINER_PORT=3081
 readonly DSH_GUI_HOST_PORT=13080
 
 # 长久交互区: 环境变量优先,回退 ~/dsh-safe

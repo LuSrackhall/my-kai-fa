@@ -64,7 +64,9 @@ echo 'export DSH_SAFE_DIR=/Volumes/SSD980/dsh-safe' >> ~/.zshrc   # 本机示例
 
 ```zsh
 dsh-setup                   # 安装最新版 dsh (以后更新也是这条命令)
-dsh                         # 启动 DeepSeek Harness
+dsh-web                     # 启动 DeepSeek Harness 的 Web UI
+# (= 官方命令 dsh web --host 0.0.0.0 --no-open;
+#  首次运行会引导完成配置)
 # Mac 浏览器访问 http://127.0.0.1:13080 (容器那份;
 # 主机自身的 dsh 仍在 http://127.0.0.1:3080,互不干扰)
 ```
@@ -134,6 +136,7 @@ git config --file /workspaces/dsh-safe/git/gitconfig user.email "你的邮箱"
 | `.devcontainer/Dockerfile` | 镜像定义 | base:ubuntu + CLI 工具 + 版本管理器 + COPY init-env/dsh-setup |
 | `.devcontainer/init-env.sh` | Shell 初始化 | 版本管理器激活 + npm 用户级前缀 + 交互区 gitconfig 接线 |
 | `.devcontainer/dsh-setup.sh` | DSH 引导 | 一条命令安装/更新 @deepseek-ai/dsh 到用户级 npm 前缀 |
+| `.devcontainer/dsh-web.sh` | DSH 启动 | 固化官方 `dsh web` 的容器正确参数(--host 0.0.0.0 --no-open) |
 | `.devcontainer/devcontainer.json` | 容器配置 | 交互区参数化挂载 + Features + forwardPorts(仅 3080) |
 | `scripts/build.sh` | 宿主机脚本 | 构建 `safe-agent-dev:latest`,支持 `--platform` |
 | `scripts/start.sh` | 宿主机脚本 | 容器生命周期: 创建/复用/强制重建/进入;安全运行参数在此落地 |

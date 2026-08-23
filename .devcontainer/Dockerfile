@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     gnupg \
     lsb-release \
+    socat \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================
@@ -89,9 +90,12 @@ RUN echo 'source /usr/local/bin/init-env.sh' >> /home/vscode/.zshrc \
 # ============================================================
 # DSH 引导 — dsh-setup 统一安装/更新 DeepSeek Harness
 # 固化"命令"而非"版本": 容器内执行 dsh-setup 即得最新版 dsh
+# dsh-web 按容器环境固化官方启动命令 (dsh web --host 0.0.0.0 --no-open)
 # ============================================================
 COPY .devcontainer/dsh-setup.sh /usr/local/bin/dsh-setup
 RUN chmod 755 /usr/local/bin/dsh-setup
+COPY .devcontainer/dsh-web.sh /usr/local/bin/dsh-web
+RUN chmod 755 /usr/local/bin/dsh-web
 
 # ============================================================
 # Zsh 别名

@@ -21,6 +21,7 @@ npm install -g "@deepseek-ai/dsh@latest"
 if command -v dsh >/dev/null 2>&1; then
     echo "[dsh-setup] 完成 → $(command -v dsh)"
     dsh --version 2>/dev/null || true
+    echo "[dsh-setup] 启动 Web UI 请执行: dsh-web  (浏览器访问宿主侧 http://127.0.0.1:13080)"
 else
     echo "[dsh-setup] 警告: dsh 不在 PATH 中。" >&2
     echo "            请重开 Shell 或执行: source /usr/local/bin/init-env.sh" >&2
