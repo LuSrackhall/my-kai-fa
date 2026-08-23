@@ -21,7 +21,8 @@
 # 安全模型:
 #   - 不挂载 docker.sock (宿主 Docker 总开关,等于隔离后门)
 #   - 不挂载 ~/.ssh / ~/.gitconfig (只读防删不防读)
-#   - 不使用 --network=host,仅映射 127.0.0.1:3080 → 容器 3080 (dsh web GUI)
+#   - 不使用 --network=host,仅映射 127.0.0.1:13080 → 容器 3080 (dsh web GUI;
+#     宿主侧换号是为了避开宿主机自身 dsh 占用的 3080)
 #
 # 架构说明 (--platform):
 #   默认: Docker 自动选择与宿主机匹配的原生架构。
@@ -51,7 +52,7 @@
 #   │   │
 #   │   └─ 不存在
 #   │       └─ 创建新容器 → docker run -it --name <容器名> \
-#   │                          -p 127.0.0.1:3080:3080 \
+#   │                          -p 127.0.0.1:13080:3080 \
 #   │                          -v ${DSH_SAFE_DIR:-~/dsh-safe}:/workspaces/dsh-safe \
 #   │                          [-v <指定路径>:/workspaces/<basename>] \
 #   │                          safe-agent-dev:latest zsh
@@ -81,8 +82,10 @@ readonly IMAGE_NAME="safe-agent-dev"
 readonly IMAGE_TAG="latest"
 readonly FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 
-# dsh web GUI 端口 (容器内端口;宿主机侧固定绑 127.0.0.1)
-readonly DSH_GUI_PORT=3080
+# dsh web GUI 端口: 容器内固定 3080;宿主机侧用 13080 ——
+# 避开宿主机自身 dsh 已占用的 127.0.0.1:3080,两者互不干扰
+readonly DSH_GUI_CONTAINER_PORT=3080
+readonly DSH_GUI_HOST_PORT=13080
 
 # 长久交互区: 环境变量优先,回退 ~/dsh-safe
 SAFE_DIR="${DSH_SAFE_DIR:-${HOME}/dsh-safe}"
@@ -240,7 +243,7 @@ echo ""
 docker run -it \
     --name "${CONTAINER_NAME}" \
     --hostname "${CONTAINER_NAME}" \
-    -p "127.0.0.1:${DSH_GUI_PORT}:${DSH_GUI_PORT}" \
+    -p "127.0.0.1:${DSH_GUI_HOST_PORT}:${DSH_GUI_CONTAINER_PORT}" \
     -v "${SAFE_DIR}:/workspaces/dsh-safe" \
     ${EXTRA_MOUNT_ARGS[@]+"${EXTRA_MOUNT_ARGS[@]}"} \
     "${FULL_IMAGE}" \

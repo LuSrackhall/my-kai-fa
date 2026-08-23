@@ -8,7 +8,7 @@
 > |----|------|----------|
 > | docker.sock (宿主 Docker 总开关) | 挂载进容器 | ❌ 移除 |
 > | `~/.ssh` / `~/.gitconfig` | 只读挂载进容器（只读防删不防读） | ❌ 移除，Git 身份改为持久化在交互区 |
-> | 网络 | `--network=host`（本机服务对容器可见） | ❌ 独立网络，仅映射 GUI 端口 3080 |
+> | 网络 | `--network=host`（本机服务对容器可见） | ❌ 独立网络，仅映射 GUI 端口 `宿主13080 → 容器3080` |
 > | 挂载模型 | projects + data 双固定挂载 + 每次指定路径 | ✅ 唯一挂载：长久交互区 `DSH_SAFE_DIR` 整块挂载 |
 > | DSH 支持 | 无 | ✅ `dsh-setup` 一键安装/更新（固化命令不锁版本） |
 
@@ -18,7 +18,7 @@
 
 - 无 docker.sock —— 容器内 agent 无法借宿主 Docker 越过挂载边界
 - 无 `.ssh` / `.gitconfig` 挂载 —— 宿主密钥与配置不被读取外带
-- 无 `--privileged`、无 host 网络 —— 仅开放 `127.0.0.1:3080` 给 dsh web GUI
+- 无 `--privileged`、无 host 网络 —— 仅映射 `127.0.0.1:13080 → 容器 3080` 给 dsh web GUI（宿主侧换号，避开主机自身 dsh 占用的 3080）
 
 ## 语言运行时
 
@@ -65,7 +65,8 @@ echo 'export DSH_SAFE_DIR=/Volumes/SSD980/dsh-safe' >> ~/.zshrc   # 本机示例
 ```zsh
 dsh-setup                   # 安装最新版 dsh (以后更新也是这条命令)
 dsh                         # 启动 DeepSeek Harness
-# Mac 浏览器访问 http://127.0.0.1:3080
+# Mac 浏览器访问 http://127.0.0.1:13080 (容器那份;
+# 主机自身的 dsh 仍在 http://127.0.0.1:3080,互不干扰)
 ```
 
 ### 方式二: VS Code Dev Containers
@@ -100,7 +101,7 @@ git config --file /workspaces/dsh-safe/git/gitconfig user.email "你的邮箱"
 
 ```bash
 ./scripts/start.sh session-1
-./scripts/start.sh session-2        # 注意: 3080 端口同一时刻只能归一个容器
+./scripts/start.sh session-2        # 注意: 13080 门牌同一时刻只能归一个容器
 ./scripts/start.sh proj-a /Volumes/SSD980/dsh-safe/foo   # 额外把 foo 挂为本次主目录
 ./scripts/start.sh main -f          # 环境被搞脏时重置容器(dsh 重跑 dsh-setup 即恢复)
 ```
@@ -112,7 +113,7 @@ git config --file /workspaces/dsh-safe/git/gitconfig user.email "你的邮箱"
 | 想改什么 | 改哪里 |
 |----------|--------|
 | 交互区路径 | 环境变量 `DSH_SAFE_DIR`（无需改文件） |
-| GUI 端口 | `scripts/start.sh` 中 `DSH_GUI_PORT` 与 `.devcontainer/devcontainer.json` 中 `forwardPorts` |
+| GUI 端口 | `scripts/start.sh` 中 `DSH_GUI_HOST_PORT`(宿主侧)/`DSH_GUI_CONTAINER_PORT`,及 `.devcontainer/devcontainer.json` 中 `forwardPorts` |
 | 额外固定挂载 | `.devcontainer/devcontainer.json` 的 `"mounts"` 数组 |
 
 ## 故障排除
@@ -120,7 +121,7 @@ git config --file /workspaces/dsh-safe/git/gitconfig user.email "你的邮箱"
 | 问题 | 原因 | 解决 |
 |------|------|------|
 | 报 "mount path not shared"(仅 Docker Desktop) | 未共享该卷 | Settings → Resources → File sharing 勾选对应路径;OrbStack 无此问题 |
-| 浏览器打不开 127.0.0.1:3080 | dsh 未启动或端口被其他容器占用 | 容器内先跑 `dsh`;或换端口映射 |
+| 浏览器打不开 127.0.0.1:13080 | dsh 未启动或宿主侧门牌被占 | 容器内先跑 `dsh`;确认 13080 无其他进程占用 |
 | 容器内 `dsh` 找不到 | 新 Shell 未加载 PATH 或尚未安装 | `dsh-setup` 安装;或 `source /usr/local/bin/init-env.sh` |
 | 容器内 `node`/`cargo` 找不到 | init-env.sh 未 source | 手动执行 `source /usr/local/bin/init-env.sh` |
 | Apple Silicon 拉取报 platform 错 | 个别镜像无 ARM64 版本 | 加 `--platform linux/amd64` 走 Rosetta |
