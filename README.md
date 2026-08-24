@@ -111,6 +111,29 @@ git config --file /workspaces/dsh-safe/git/gitconfig user.email "你的邮箱"
 
 > 提示: 多个容器共享同一交互区时彼此可见区内全部项目——"容器间二次隔离"不属于本设计目标。
 
+## Web 开发：容器内服务的宿主访问
+
+在容器里起的开发服务器(Vite / Flask / uvicorn…),Mac 浏览器按下面方式访问:
+
+| 访问方式 | 地址 | 说明 |
+|----------|------|------|
+| **orb.local 域名（推荐）** | `http://main.orb.local:<端口>` | OrbStack 专属功能,零配置;域名跟随容器名(`start.sh proj-a` → `proj-a.orb.local`) |
+| 显式发布端口 | `http://127.0.0.1:<端口>` | 仅限 `-p` 登记过的端口(当前只有 dsh GUI 的 13080);要加常驻端口就改 `scripts/start.sh` |
+| VS Code 端口面板 | 自动转发后的 localhost | Attach 模式连上容器后,自动检测新监听端口 |
+
+**关键前提:服务必须绑 `0.0.0.0`,不能只绑容器回环**(与 dsh 官方安全限制同理)。常见框架默认值:
+
+| 框架/工具 | 默认绑定 | 启动参数 |
+|-----------|---------|---------|
+| Vite | 127.0.0.1 ❌ | `vite --host` |
+| Flask | 127.0.0.1 ❌ | `flask run --host 0.0.0.0` |
+| uvicorn | 127.0.0.1 ❌ | `uvicorn main:app --host 0.0.0.0` |
+| python http.server | 0.0.0.0 ✓ | 直接可用 |
+
+> - 只绑回环的服务从宿主永远连不上——表现为"服务明明起来了,浏览器却打不开",先检查绑定地址
+> - 未发布端口不出现在宿主的 127.0.0.1 上是 Docker 正常行为,不是故障
+> - OrbStack 重启后若 orb.local 解析异常,`sudo dscacheutil -flushcache`
+
 ## 自定义
 
 | 想改什么 | 改哪里 |
