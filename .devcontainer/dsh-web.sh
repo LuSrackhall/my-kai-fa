@@ -15,18 +15,21 @@
 # ============================================================
 set -eo pipefail
 
-# ---- 激活 node(nvm)。注意: 不能在 set -u 下 source nvm.sh ----
+# ---- 激活 node(nvm)。两个坑都已填:
+#   1) 不能在 set -u 下 source nvm.sh;
+#   2) nvm.sh 与 NPM_CONFIG_PREFIX 互斥(交互 shell 经 init-env 已设置它),
+#      source 前必须 unset;启动服务不需要该变量,不装回。----
 export NVM_DIR="/usr/local/share/nvm"
 if [ -s "$NVM_DIR/nvm.sh" ]; then
     set +u
-    . "$NVM_DIR/nvm.sh"
+    unset NPM_CONFIG_PREFIX
+    . "$NVM_DIR/nvm.sh" || true
+    nvm use default --silent >/dev/null 2>&1 || true
     set -u
-    nvm use default --silent || true
 fi
 
-# ---- npm 用户级前缀(与 init-env.sh 保持一致) ----
-export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
-export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
+# ---- 补 PATH 找到用户级安装的 dsh(只加路径,不导出前缀变量) ----
+export PATH="$HOME/.npm-global/bin:$PATH"
 
 command -v node   >/dev/null 2>&1 || { echo "[dsh-web] 错误: node 不可用" >&2; exit 1; }
 command -v dsh    >/dev/null 2>&1 || { echo "[dsh-web] 尚未安装 dsh,请先执行: dsh-setup" >&2; exit 1; }

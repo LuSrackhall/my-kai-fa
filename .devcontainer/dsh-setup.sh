@@ -16,7 +16,11 @@ export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
 export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
 
 echo "[dsh-setup] 安装/更新 @deepseek-ai/dsh ..."
-npm install -g "@deepseek-ai/dsh@latest"
+# 显式放行 dsh 运行所依赖的五个包的原生安装脚本(node-pty/koffi 提供
+# agent 终端的 PTY 能力,缺了会静默残废);白名单精确到包名。
+npm install -g \
+  --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs \
+  "@deepseek-ai/dsh@latest"
 
 if command -v dsh >/dev/null 2>&1; then
     echo "[dsh-setup] 完成 → $(command -v dsh)"
